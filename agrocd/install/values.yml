@@ -1,0 +1,27 @@
+global:
+  domain: ""
+
+configs:
+  params:
+    server.insecure: true  # TLS lo maneja el port-forward, no ArgoCD
+
+server:
+  replicas: 1
+
+repoServer:
+  replicas: 1
+
+applicationSet:
+  replicas: 1
+
+controller:
+  replicas: 1
+
+redis-ha:
+  enabled: false
+
+redis:
+  enabled: true
+
+ha:
+  enabled: false

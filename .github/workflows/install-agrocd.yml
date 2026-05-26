@@ -1,0 +1,64 @@
+name: Install ArgoCD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  install-argocd:
+    name: Install ArgoCD via Helm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate gcloud
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > /tmp/sa-key.json
+          gcloud auth activate-service-account --key-file=/tmp/sa-key.json
+          gcloud config set project ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Get bastion IP
+        id: bastion
+        run: |
+          IP=$(gcloud compute instances describe ${{ vars.BASTION_NAME }} \
+            --zone=${{ vars.GCP_ZONE }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ steps.bastion.outputs.ip }} >> ~/.ssh/known_hosts
+
+      - name: Copy values.yaml to bastion
+        run: |
+          scp -i ~/.ssh/id_rsa \
+            argocd/install/values.yaml \
+            devops@${{ steps.bastion.outputs.ip }}:~/argocd-values.yaml
+
+      - name: Install ArgoCD
+        run: |
+          ssh -i ~/.ssh/id_rsa devops@${{ steps.bastion.outputs.ip }} << 'EOF'
+            helm repo add argo https://argoproj.github.io/argo-helm
+            helm repo update
+            kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+            helm upgrade --install argocd argo/argo-cd \
+              --namespace argocd \
+              --values ~/argocd-values.yaml \
+              --wait \
+              --timeout 5m
+          EOF
+
+      - name: Verify ArgoCD pods
+        run: |
+          ssh -i ~/.ssh/id_rsa devops@${{ steps.bastion.outputs.ip }} \
+            "kubectl get pods -n argocd"
