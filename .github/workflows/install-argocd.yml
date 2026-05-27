@@ -45,6 +45,14 @@ jobs:
             argocd/install/values.yaml \
             devops@${{ steps.bastion.outputs.ip }}:~/argocd-values.yaml
 
+      - name: Grant cluster-admin to bastion SA
+        run: |
+          ssh -i ~/.ssh/id_rsa devops@${{ steps.bastion.outputs.ip }} \
+            "kubectl create clusterrolebinding devops-cluster-admin \
+              --clusterrole=cluster-admin \
+              --user=360072770964-compute@developer.gserviceaccount.com \
+              --dry-run=client -o yaml | kubectl apply -f -"
+
       - name: Install ArgoCD
         run: |
           ssh -i ~/.ssh/id_rsa devops@${{ steps.bastion.outputs.ip }} << 'EOF'
